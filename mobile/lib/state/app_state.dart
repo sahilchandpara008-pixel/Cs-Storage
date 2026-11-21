@@ -101,7 +101,7 @@ class AppState extends ChangeNotifier {
           await refreshStatus();
           bumpContent();
         }
-      });
+      }, onError: (Object _) {});
       ready = true;
       // Saved UPI answers (also from before a crash/kill) are sent now.
       payments.start();
@@ -243,7 +243,7 @@ class AppState extends ChangeNotifier {
   /// active plan. If linking isn't available (Supabase's "allow manual
   /// linking" setting is off, or there's no guest session to link), it falls
   /// back to an ordinary Google sign-in, same as before.
-  Future<void> signInWithGoogle() async {
+  Future<void> signInWithGoogle({bool linkGuest = true}) async {
     if (!await _providerEnabled('google')) {
       throw StateError(
         'Google sign-in is coming soon. Please log in with email.',
@@ -253,7 +253,7 @@ class AppState extends ChangeNotifier {
     final launchMode = kIsWeb
         ? LaunchMode.platformDefault
         : LaunchMode.externalApplication;
-    if (sb.auth.currentUser?.isAnonymous ?? false) {
+    if (linkGuest && (sb.auth.currentUser?.isAnonymous ?? false)) {
       try {
         await sb.auth.linkIdentity(
           OAuthProvider.google,

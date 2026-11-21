@@ -26,6 +26,7 @@ class _LoginScreenState extends State<LoginScreen> {
   StreamSubscription<AuthState>? _sub;
   bool _googleBusy = false;
   bool _closed = false;
+  bool _retried = false;
 
   /// Email login and the auth listener can both report success: close once.
   void _close() {
@@ -52,7 +53,35 @@ class _LoginScreenState extends State<LoginScreen> {
           _close();
         }
       }
-    });
+    }, onError: _googleError);
+  }
+
+  /// The browser came back with an error. When this Google account (or its
+  /// email) already has a Flixvault account, adding it to the guest account
+  /// fails: log in to that existing account instead.
+  Future<void> _googleError(Object e) async {
+    if (_closed || !mounted) return;
+    final text = e is AuthException
+        ? '${e.code} ${e.statusCode} ${e.message}'.toLowerCase()
+        : e.toString().toLowerCase();
+    final existing = text.contains('already linked') ||
+        text.contains('identity_already_exists') ||
+        text.contains('already been registered') ||
+        text.contains('already registered') ||
+        text.contains('email_exists');
+    if (existing && !_retried) {
+      _retried = true;
+      setState(() => _googleBusy = true);
+      try {
+        await app.signInWithGoogle(linkGuest: false);
+      } catch (e) {
+        if (mounted) showSnack(context, friendlyError(e));
+      } finally {
+        if (mounted) setState(() => _googleBusy = false);
+      }
+      return;
+    }
+    showSnack(context, "Google login didn't finish. Please try again.");
   }
 
   @override
@@ -62,6 +91,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _google() async {
+    _retried = false;
     setState(() => _googleBusy = true);
     try {
       await app.signInWithGoogle();
