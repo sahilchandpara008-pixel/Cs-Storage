@@ -1773,5 +1773,8 @@ select t.ok(public.admin_analytics()->>'revenue_paise' is not null, 'owner sees 
 select t.act_as('content_admin');
 select t.ok(public.admin_analytics()->>'revenue_paise' is null, 'content admins do not see revenue');
 reset role;
+select t.ok(public.url_decode('a+b%20c%zz%') = 'a b c%zz%' and public.url_decode('%E2%82%B9 49') = '₹ 49'
+            and public.url_decode('') = '' and public.url_decode(null) is null and public.url_decode('100%') = '100%',
+            'url_decode: %XX, +, stray %, unicode, empty and null');
 \echo
 \echo 'All tests passed.'
