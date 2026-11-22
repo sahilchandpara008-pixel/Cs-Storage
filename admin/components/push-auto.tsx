@@ -44,6 +44,7 @@ const REPORT_LABEL: Record<string, string> = {
   come_back: "💤 Come back (1st)",
   come_back_2: "💤 Come back (2nd)",
   new_videos: "🎬 New videos",
+  nonbuyer: "📣 Daily (not paid yet)",
 };
 
 function Toggle({ on }: { on: boolean }) {

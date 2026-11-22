@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { PushAuto, type AutoReportRow, type AutoSettings } from "@/components/push-auto";
 import { PushComposer } from "@/components/push-composer";
+import { PushSchedule, type ScheduleSettings } from "@/components/push-schedule";
 import { Badge, Button, Empty, Flash, PageHeader, Stat, Table, Td, Th } from "@/components/ui";
 import { requireOwner } from "@/lib/auth";
-import { cancelPush, saveAuto, saveChannelMode, sendPush } from "./actions";
+import { cancelPush, saveAuto, saveChannelMode, saveNonbuyer, saveQuiet, sendPush } from "./actions";
 
 type Msg = {
   id: string;
@@ -57,6 +58,7 @@ const KIND_LABEL: Record<string, string> = {
   welcome: "Welcome video",
   come_back: "Come back",
   come_back_2: "Come back (2nd)",
+  nonbuyer: "Daily (not paid yet)",
 };
 
 const when = (iso: string | null) =>
@@ -102,7 +104,8 @@ export default async function NotificationsPage({
   const sp = await searchParams;
   const tab = sp.tab === "history" || sp.tab === "auto" ? sp.tab : "send";
   const { supabase } = await requireOwner();
-  const [{ data: ov }, { data: posts }, { data: channels }, keySet, { data: auto }, { data: autoReport }] = await Promise.all([
+  const [{ data: ov }, { data: posts }, { data: channels }, keySet, { data: auto }, { data: autoReport }, { data: schedule }] =
+    await Promise.all([
     supabase.rpc("admin_push_overview", { p_limit: 100 }),
     supabase
       .from("posts")
@@ -114,6 +117,7 @@ export default async function NotificationsPage({
     firebaseKeySet(),
     supabase.rpc("admin_push_auto_get"),
     tab === "auto" ? supabase.rpc("admin_push_auto_report", { p_days: 7 }) : Promise.resolve({ data: [] }),
+    tab === "auto" ? supabase.rpc("admin_push_schedule_get") : Promise.resolve({ data: null }),
   ]);
   const o = (ov ?? {}) as Overview;
   const messages = o.messages ?? [];
@@ -147,13 +151,16 @@ export default async function NotificationsPage({
       <Tabs tab={tab} />
 
       {tab === "auto" ? (
-        <PushAuto
-          data={(auto ?? { kinds: {}, channels: [], sent_7d: {} }) as AutoSettings}
-          report={(autoReport ?? []) as AutoReportRow[]}
-          posts={(posts ?? []).map((p) => ({ id: p.id as string, name: p.title as string }))}
-          saveAuto={saveAuto}
-          saveChannelMode={saveChannelMode}
-        />
+        <div className="space-y-5">
+          {schedule && <PushSchedule data={schedule as ScheduleSettings} saveQuiet={saveQuiet} saveNonbuyer={saveNonbuyer} />}
+          <PushAuto
+            data={(auto ?? { kinds: {}, channels: [], sent_7d: {} }) as AutoSettings}
+            report={(autoReport ?? []) as AutoReportRow[]}
+            posts={(posts ?? []).map((p) => ({ id: p.id as string, name: p.title as string }))}
+            saveAuto={saveAuto}
+            saveChannelMode={saveChannelMode}
+          />
+        </div>
       ) : tab === "send" ? (
         <PushComposer
           action={sendPush}
@@ -207,7 +214,7 @@ export default async function NotificationsPage({
                           ? m.audience === "channels"
                             ? "Channel members"
                             : "All app users"
-                          : m.kind === "welcome" || m.kind.startsWith("come_back")
+                          : m.kind === "welcome" || m.kind === "nonbuyer" || m.kind.startsWith("come_back")
                             ? "1 phone"
                             : "1 person"}
                     </Td>

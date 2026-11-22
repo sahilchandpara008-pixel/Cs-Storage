@@ -113,3 +113,45 @@ export async function saveChannelMode(channelId: string, formData: FormData) {
   revalidatePath("/notifications");
   redirect(withMessage("/notifications?tab=auto", "ok", "Channel setting saved."));
 }
+
+export async function saveQuiet(formData: FormData) {
+  const { supabase } = await requireOwner();
+  const { error } = await supabase.rpc("admin_push_quiet_save", {
+    p_on: formData.get("quiet_on") === "on",
+    p_from: Number(formData.get("quiet_from")),
+    p_to: Number(formData.get("quiet_to")),
+  });
+  if (error) redirect(withMessage("/notifications?tab=auto", "error", error.message));
+  revalidatePath("/notifications");
+  redirect(withMessage("/notifications?tab=auto", "ok", "Quiet hours saved."));
+}
+
+export async function saveNonbuyer(formData: FormData) {
+  const { supabase } = await requireOwner();
+  const hours = formData
+    .getAll("hour")
+    .map(Number)
+    .filter((h) => Number.isInteger(h) && h >= 0 && h <= 23);
+  const msgs: { pos: number; title: string; body: string; enabled: boolean }[] = [];
+  for (const [k, v] of formData.entries()) {
+    const m = /^title_(\d+)$/.exec(k);
+    if (!m) continue;
+    const pos = Number(m[1]);
+    msgs.push({
+      pos,
+      title: String(v).trim(),
+      body: String(formData.get(`body_${pos}`) ?? "").trim(),
+      enabled: formData.get(`on_${pos}`) === "on",
+    });
+  }
+  const { error } = await supabase.rpc("admin_push_nonbuyer_save", {
+    p_enabled: formData.get("enabled") === "on",
+    p_audience: formData.get("audience") === "ads" ? "ads" : "all",
+    p_days: Number(formData.get("days")) || 14,
+    p_hours: hours,
+    p_msgs: msgs,
+  });
+  if (error) redirect(withMessage("/notifications?tab=auto", "error", error.message));
+  revalidatePath("/notifications");
+  redirect(withMessage("/notifications?tab=auto", "ok", "Daily messages saved."));
+}

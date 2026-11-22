@@ -1074,6 +1074,7 @@ reset role;
 
 -- Push notifications (automatic ones are tested separately below)
 update public.push_auto set enabled = false;
+update public.push_settings set quiet_on = false where id = 1;  -- tests run at any hour
 insert into public.installs (install_id, referrer_status, source, first_user_id)
 values ('99999999-0000-0000-0000-0000000000f1', 'apk', 'organic', t.id('owner'));
 set role authenticated;
@@ -1344,6 +1345,79 @@ select t.act_as('organic_user');
 select t.fails($$select public.admin_push_auto_report(7)$$, 'app users cannot see the report');
 select t.fails($$select public.admin_push_auto_save2('welcome', true, 'x', 'y')$$, 'app users cannot change automatic messages (2)');
 reset role;
+-- Daily messages to people who haven't paid (every hour in tests).
+update public.push_settings set nb_hours = array(select generate_series(0, 23)) where id = 1;
+update public.push_auto set enabled = false where kind <> 'nonbuyer';
+update public.push_auto set enabled = true, enabled_at = now() - interval '1 day', delay2 = 14 where kind = 'nonbuyer';
+update public.installs set notif_status = 'allowed'
+ where install_id in ('99999999-0000-0000-0000-0000000000e3', '99999999-0000-0000-0000-0000000000e4');
+delete from public.push_messages where target_install in ('99999999-0000-0000-0000-0000000000e3', '99999999-0000-0000-0000-0000000000e4');
+select t.ok(public.push_nonbuyer_tick() >= 2, 'daily: phones that never paid get a message');
+select t.ok((select title like '🔥 #1 today: %' and action_type = 'post' and body like '%watched%' and body not like '%{%'
+               from public.push_messages where kind = 'nonbuyer' and target_install = '99999999-0000-0000-0000-0000000000e3'),
+            'daily: 1st message = today''s trending video, opens it');
+select t.ok((select action_id is distinct from 'aaaaaaaa-0000-0000-0000-00000000d002' and content_audience = 'organic'
+               from public.push_messages where kind = 'nonbuyer' and target_install = '99999999-0000-0000-0000-0000000000e4'),
+            'daily: organic phones get organic / general videos only');
+select t.ok(public.push_nonbuyer_tick() = 0, 'daily: once per phone per time slot');
+update public.push_messages set dedupe_key = dedupe_key || ':old', created_at = now() - interval '3 hours'
+ where kind = 'nonbuyer' and target_install = '99999999-0000-0000-0000-0000000000e3';
+select public.push_nonbuyer_tick();
+select t.ok((select title = 'Unlock fast downloads today 🔥' and action_type = 'premium' and body like '%₹%' and body not like '%{%'
+               from public.push_messages where kind = 'nonbuyer' and target_install = '99999999-0000-0000-0000-0000000000e3'
+              order by created_at desc limit 1),
+            'daily: next slot = the next message (plan reminder, opens Premium)');
+update public.push_messages set dedupe_key = dedupe_key || ':old2', created_at = now() - interval '3 hours'
+ where kind = 'nonbuyer' and target_install = '99999999-0000-0000-0000-0000000000e3' and dedupe_key not like '%:old';
+insert into public.push_messages (kind, title, body, audience, target_install, dedupe_key)
+values ('welcome', 'W', '', 'all', '99999999-0000-0000-0000-0000000000e3', 'test-recent-e3');
+select public.push_nonbuyer_tick();
+select t.ok((select count(*) = 2 from public.push_messages where kind = 'nonbuyer' and target_install = '99999999-0000-0000-0000-0000000000e3'),
+            'daily: skipped when the phone got another automatic message in the last 2 hours');
+select t.ok(not exists (select 1 from public.push_messages where kind = 'nonbuyer' and target_install = '99999999-0000-0000-0000-000000000001'),
+            'daily: never sent to someone who bought a plan');
+-- Quiet hours: automatic messages wait, hand-written ones go out.
+update public.push_auto set enabled = false;
+update public.push_messages set status = 'cancelled'
+ where target_install = '99999999-0000-0000-0000-0000000000e4' and status = 'scheduled';
+update public.push_settings set quiet_on = true,
+       quiet_from = extract(hour from now() at time zone 'Asia/Kolkata')::int,
+       quiet_to = (extract(hour from now() at time zone 'Asia/Kolkata')::int + 1) % 24 where id = 1;
+select t.ok(public.push_is_quiet(), 'quiet hours: now is quiet');
+insert into public.push_messages (kind, title, body, audience, target_install, dedupe_key)
+values ('come_back', 'Held', '', 'all', '99999999-0000-0000-0000-0000000000e4', 'test-held-1'),
+       ('come_back', 'Held newer', '', 'all', '99999999-0000-0000-0000-0000000000e4', 'test-held-2');
+insert into public.push_messages (kind, title, body, audience) values ('manual', 'Hand sent', '', 'all');
+select public.push_tick();
+select t.ok((select status = 'scheduled' from public.push_messages where dedupe_key = 'test-held-1')
+            and (select status <> 'scheduled' from public.push_messages where kind = 'manual' and title = 'Hand sent'),
+            'quiet hours: automatic messages wait, messages you send yourself go out');
+update public.push_messages set scheduled_at = now() - interval '10 minutes', created_at = now() - interval '10 minutes'
+ where dedupe_key = 'test-held-1';
+update public.push_messages set scheduled_at = now() - interval '5 minutes', created_at = now() - interval '5 minutes'
+ where dedupe_key = 'test-held-2';
+update public.push_settings set quiet_on = false where id = 1;
+select public.push_tick();
+select t.ok((select status = 'cancelled' from public.push_messages where dedupe_key = 'test-held-1')
+            and (select status <> 'scheduled' and status <> 'cancelled' from public.push_messages where dedupe_key = 'test-held-2'),
+            'after quiet hours: only the newest held message per phone goes out');
+set role authenticated;
+select t.act_as('owner');
+select public.admin_push_quiet_save(true, 3, 9);
+select t.ok((select (j->>'quiet_from')::int = 3 and (j->>'quiet_to')::int = 9 and jsonb_array_length(j->'nb_msgs') = 8
+               from (select public.admin_push_schedule_get() j) x),
+            'admin reads quiet hours and the daily messages');
+select public.admin_push_nonbuyer_save(true, 'ads', 14, array[9, 14, 19, 0],
+       '[{"pos": 2, "title": "Plans from ₹{from_price}", "body": "x", "enabled": false}]'::jsonb);
+select t.ok((select (j->>'nb_audience') = 'ads' and (j->'nb_msgs'->1->>'enabled')::boolean = false
+               from (select public.admin_push_schedule_get() j) x),
+            'admin saves the daily messages');
+select t.fails($$select public.admin_push_quiet_save(true, 5, 5)$$, 'quiet hours need two different times');
+select t.act_as('organic_user');
+select t.fails($$select public.admin_push_schedule_get()$$, 'app users cannot read the schedule');
+select t.fails($$select public.admin_push_quiet_save(false, 3, 9)$$, 'app users cannot change quiet hours');
+reset role;
+update public.push_settings set quiet_on = false where id = 1;
 set role authenticated;
 select t.act_as('owner');
 select t.ok((public.admin_payment_funnel()->'groups'->'all'->>'installs')::int =
