@@ -63,7 +63,16 @@ export async function cancelPush(id: string) {
   redirect(withMessage("/notifications?tab=history", "ok", "Scheduled message cancelled."));
 }
 
-const AUTO_KINDS = ["payment_reminder", "payment_approved", "plan_ending", "come_back", "new_videos"];
+const AUTO_KINDS = [
+  "payment_reminder",
+  "payment_failed",
+  "payment_approved",
+  "plan_ending",
+  "plan_ended",
+  "welcome",
+  "come_back",
+  "new_videos",
+];
 
 // Automatic messages: on/off, title and text (and for new videos: who, how often).
 export async function saveAuto(kind: string, formData: FormData) {
@@ -72,11 +81,22 @@ export async function saveAuto(kind: string, formData: FormData) {
   const get = (k: string) => String(formData.get(k) ?? "").trim();
   const mode = get("nv_mode");
   const hours = Number(get("interval_hours"));
-  const { error } = await supabase.rpc("admin_push_auto_save", {
+  const num = (k: string) => {
+    const n = Number(get(k));
+    return get(k) !== "" && Number.isInteger(n) && n >= 1 && n <= 90 ? n : null;
+  };
+  const opt = (k: string) => (formData.has(k) ? get(k) : null);
+  const video = get("video_post_id");
+  const { error } = await supabase.rpc("admin_push_auto_save2", {
     p_kind: kind,
     p_enabled: formData.get("enabled") === "on",
     p_title: get("title"),
     p_body: get("body"),
+    p_title2: opt("title2"),
+    p_body2: opt("body2"),
+    p_delay1: num("delay1"),
+    p_delay2: num("delay2"),
+    p_video_post_id: /^[0-9a-f-]{36}$/.test(video) ? video : null,
     p_nv_mode: mode === "members" || mode === "all" ? mode : null,
     p_interval_hours: Number.isInteger(hours) && hours >= 1 && hours <= 48 ? hours : null,
   });

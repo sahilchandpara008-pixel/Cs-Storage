@@ -630,6 +630,12 @@ select t.ok(not exists (select 1 from storage.objects where name = 'posts/700000
 select t.act_as('organic_user');   -- the creator; has a plan from earlier, remove it
 reset role;
 delete from public.subscriptions where user_id = t.id('organic_user');
+-- (welcome video setup: the most watched video today is the ads-only one)
+update public.channels set review_status = 'approved' where id = 'aaaaaaaa-0000-0000-0000-00000000c001';
+insert into public.analytics_events (install_id, event, content_id) values
+  ('99999999-0000-0000-0000-000000000001', 'content_view', 'aaaaaaaa-0000-0000-0000-00000000d002'),
+  ('99999999-0000-0000-0000-000000000001', 'content_view', 'aaaaaaaa-0000-0000-0000-00000000d002'),
+  ('99999999-0000-0000-0000-0000000000e5', 'content_view', 'aaaaaaaa-0000-0000-0000-00000000d001');
 set role authenticated;
 select t.act_as('organic_user');
 select t.ok(not public.is_premium_user(), 'creator has no plan');
@@ -1236,6 +1242,108 @@ select t.ok((select count(*) = 1 from public.push_deliveries d join public.push_
 select t.ok((select recipients = 1 from public.push_messages
               where kind = 'new_videos' and action_id = 'aaaaaaaa-0000-0000-0000-00000000d002'),
             'auto: ads-only video queued for the ads phone');
+-- More automatic messages: payment failed, 2nd reminder, plan ended (x2),
+-- welcome video, come back (x2) and the admin report.
+update public.push_auto set enabled = true, enabled_at = now() - interval '3 days';
+update public.payment_orders set created_at = now() - interval '3 days' where reference = 'AUTO1';
+insert into public.installs (install_id, referrer_status, source, created_at) values
+  ('99999999-0000-0000-0000-0000000000e2', 'ok', 'organic', now() - interval '30 days'),
+  ('99999999-0000-0000-0000-0000000000e3', 'ok', 'meta', now() - interval '4 hours'),
+  ('99999999-0000-0000-0000-0000000000e4', 'ok', 'organic', now() - interval '4 hours'),
+  ('99999999-0000-0000-0000-0000000000e5', 'ok', 'meta', now() - interval '4 hours');
+insert into public.push_tokens (install_id, token, user_id) values
+  ('99999999-0000-0000-0000-0000000000e2', 'tokE2_1234567890:abcdefghijklmn', t.id('organic_user')),
+  ('99999999-0000-0000-0000-0000000000e3', 'tokE3_1234567890:abcdefghijklmn', null),
+  ('99999999-0000-0000-0000-0000000000e4', 'tokE4_1234567890:abcdefghijklmn', null),
+  ('99999999-0000-0000-0000-0000000000e5', 'tokE5_1234567890:abcdefghijklmn', null);
+delete from public.subscriptions where user_id = t.id('organic_user');
+-- payment failed
+insert into public.payment_orders (reference, user_id, plan_id, amount_paise, status, created_at, updated_at)
+select 'AUTO3', t.id('ads_user'), id, price_inr * 100, 'failed', now(), now()
+  from public.plans order by position limit 1;
+select public.push_auto_tick();
+select t.ok((select count(*) = 1 from public.push_messages
+              where kind = 'payment_failed' and target_user = t.id('ads_user') and action_type = 'premium'
+                and title = 'Payment didn''t go through ❌' and body like '₹% wasn''t charged%'),
+            'auto: payment failed message right away, opens Premium');
+insert into public.payment_orders (reference, user_id, plan_id, amount_paise, status, created_at, updated_at)
+select 'AUTO3B', t.id('ads_user'), id, price_inr * 100, 'failed', now() + interval '1 second', now()
+  from public.plans order by position limit 1;
+select public.push_auto_tick();
+select t.ok((select count(*) = 1 from public.push_messages where kind = 'payment_failed' and target_user = t.id('ads_user')),
+            'auto: at most one payment failed message every 2 hours');
+-- payment reminders: 1st after 1 h, 2nd after 24 h (same try)
+select public.push_auto_tick();
+select t.ok((select count(*) = 1 from public.push_messages where kind = 'payment_reminder' and target_user = t.id('organic_user')),
+            'auto: 1st payment reminder');
+update public.payment_orders set created_at = now() - interval '25 hours' where reference = 'AUTO2';
+select public.push_auto_tick();
+select public.push_auto_tick();
+select t.ok((select count(*) = 1 from public.push_messages
+              where kind = 'payment_reminder_2' and target_user = t.id('organic_user')
+                and dedupe_key = (select 'reminder2:' || id from public.payment_orders where reference = 'AUTO2')
+                and title like 'Still want %'),
+            'auto: 2nd payment reminder once, a day later');
+-- plan ended: on the day, then 3 days later (if not renewed)
+insert into public.subscriptions (id, user_id, plan_id, starts_at, ends_at)
+select 'aaaaaaaa-0000-0000-0000-00000000e501', t.id('organic_user'), id, now() - interval '30 days', now() - interval '1 hour'
+  from public.plans where code = 'gold';
+select public.push_auto_tick();
+select t.ok((select count(*) = 1 from public.push_messages
+              where dedupe_key = 'ended:aaaaaaaa-0000-0000-0000-00000000e501' and title = 'Your Gold Plan has ended'),
+            'auto: plan ended message on the day');
+update public.subscriptions set ends_at = now() - interval '3 days 1 hour' where id = 'aaaaaaaa-0000-0000-0000-00000000e501';
+select public.push_auto_tick();
+select t.ok((select count(*) = 1 from public.push_messages
+              where dedupe_key = 'ended2:aaaaaaaa-0000-0000-0000-00000000e501' and kind = 'plan_ended_2'
+                and title = 'We miss you on Gold Plan 💛' and body like '%from ₹%' and body not like '%{%'),
+            'auto: plan ended 2nd message 3 days later, with the lowest price');
+-- welcome video: most watched today for that kind of phone; not if they already watched
+select public.push_auto_tick();
+select t.ok((select action_type = 'post' and action_id = 'aaaaaaaa-0000-0000-0000-00000000d002' and content_audience = 'ads'
+                    and title like 'Start with today''s most watched%' and body = 'Ads only ep · Auto Channel'
+               from public.push_messages where dedupe_key = 'welcome:99999999-0000-0000-0000-0000000000e3'),
+            'auto: welcome video = most watched today, for an ads phone');
+select t.ok((select action_id <> 'aaaaaaaa-0000-0000-0000-00000000d002' and content_audience = 'organic'
+               from public.push_messages where dedupe_key = 'welcome:99999999-0000-0000-0000-0000000000e4'),
+            'auto: organic phones never get ads-only videos');
+select t.ok(not exists (select 1 from public.push_messages where dedupe_key = 'welcome:99999999-0000-0000-0000-0000000000e5'),
+            'auto: no welcome message for a phone that already watched');
+-- come back: 1st after 7 days, 2nd after 14 days, with the newest video
+update public.push_auto set title = 'New since your last visit', body = '{title} and {more} more videos are waiting.'
+ where kind = 'come_back';
+insert into public.analytics_events (install_id, event, created_at) values
+  ('99999999-0000-0000-0000-0000000000e3', 'app_open', now() - interval '8 days'),
+  ('99999999-0000-0000-0000-0000000000e4', 'app_open', now() - interval '15 days');
+select public.push_auto_tick();
+select t.ok((select kind = 'come_back' and action_type = 'post' and action_id is not null
+               from public.push_messages where dedupe_key like 'comeback:99999999-0000-0000-0000-0000000000e3:%'),
+            'auto: come back after 7 days opens the newest video');
+select t.ok((select title = 'New since your last visit' and body like '% more videos are waiting.' and body not like '%{%'
+               from public.push_messages where dedupe_key like 'comeback:99999999-0000-0000-0000-0000000000e3:%'),
+            'auto: come back text filled in');
+select t.ok((select count(*) = 1 from public.push_messages where kind = 'come_back_2'
+              and dedupe_key like 'comeback2:99999999-0000-0000-0000-0000000000e4:%')
+            and not exists (select 1 from public.push_messages where dedupe_key like 'comeback:99999999-0000-0000-0000-0000000000e4:%'),
+            'auto: 2nd come back message after 14 days');
+select public.push_auto_tick();
+select t.ok((select count(*) = 1 from public.push_messages where dedupe_key like 'comeback%:99999999-0000-0000-0000-0000000000e3:%'),
+            'auto: come back is sent once per absence');
+-- admin: new settings + report
+set role authenticated;
+select t.act_as('owner');
+select public.admin_push_auto_save2('come_back', true, 'A', 'B', 'C', 'D', 5, 21);
+select t.ok((select (k->>'delay1')::int = 5 and (k->>'delay2')::int = 21 and k->>'title2' = 'C'
+               from (select public.admin_push_auto_get()->'kinds'->'come_back' k) x),
+            'admin saves the 2nd message and its timing');
+select t.fails($$select public.admin_push_auto_save2('come_back', true, 'A', 'B', 'C', 'D', 9, 7)$$,
+               'the 2nd come back message must come after the 1st');
+select t.ok(jsonb_typeof(public.admin_push_auto_report(7)) = 'array', 'admin reads the automatic message report');
+select t.ok((public.admin_push_auto_get()->'kinds'->'welcome'->>'delay1')::int = 3, 'admin reads the welcome settings');
+select t.act_as('organic_user');
+select t.fails($$select public.admin_push_auto_report(7)$$, 'app users cannot see the report');
+select t.fails($$select public.admin_push_auto_save2('welcome', true, 'x', 'y')$$, 'app users cannot change automatic messages (2)');
+reset role;
 set role authenticated;
 select t.act_as('owner');
 select t.ok((public.admin_payment_funnel()->'groups'->'all'->>'installs')::int =

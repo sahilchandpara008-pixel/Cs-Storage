@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { PushAuto, type AutoSettings } from "@/components/push-auto";
+import { PushAuto, type AutoReportRow, type AutoSettings } from "@/components/push-auto";
 import { PushComposer } from "@/components/push-composer";
 import { Badge, Button, Empty, Flash, PageHeader, Stat, Table, Td, Th } from "@/components/ui";
 import { requireOwner } from "@/lib/auth";
@@ -48,9 +48,15 @@ const KIND_LABEL: Record<string, string> = {
   manual: "Manual",
   new_videos: "New videos",
   payment_reminder: "Payment reminder",
+  payment_reminder_2: "Payment reminder (2nd)",
+  payment_failed: "Payment failed",
   payment_approved: "Payment approved",
   plan_ending: "Plan ending",
+  plan_ended: "Plan ended",
+  plan_ended_2: "Plan ended (later)",
+  welcome: "Welcome video",
   come_back: "Come back",
+  come_back_2: "Come back (2nd)",
 };
 
 const when = (iso: string | null) =>
@@ -96,7 +102,7 @@ export default async function NotificationsPage({
   const sp = await searchParams;
   const tab = sp.tab === "history" || sp.tab === "auto" ? sp.tab : "send";
   const { supabase } = await requireOwner();
-  const [{ data: ov }, { data: posts }, { data: channels }, keySet, { data: auto }] = await Promise.all([
+  const [{ data: ov }, { data: posts }, { data: channels }, keySet, { data: auto }, { data: autoReport }] = await Promise.all([
     supabase.rpc("admin_push_overview", { p_limit: 100 }),
     supabase
       .from("posts")
@@ -107,6 +113,7 @@ export default async function NotificationsPage({
     supabase.from("channels").select("id, name").order("name"),
     firebaseKeySet(),
     supabase.rpc("admin_push_auto_get"),
+    tab === "auto" ? supabase.rpc("admin_push_auto_report", { p_days: 7 }) : Promise.resolve({ data: [] }),
   ]);
   const o = (ov ?? {}) as Overview;
   const messages = o.messages ?? [];
@@ -140,7 +147,13 @@ export default async function NotificationsPage({
       <Tabs tab={tab} />
 
       {tab === "auto" ? (
-        <PushAuto data={(auto ?? { kinds: {}, channels: [], sent_7d: {} }) as AutoSettings} saveAuto={saveAuto} saveChannelMode={saveChannelMode} />
+        <PushAuto
+          data={(auto ?? { kinds: {}, channels: [], sent_7d: {} }) as AutoSettings}
+          report={(autoReport ?? []) as AutoReportRow[]}
+          posts={(posts ?? []).map((p) => ({ id: p.id as string, name: p.title as string }))}
+          saveAuto={saveAuto}
+          saveChannelMode={saveChannelMode}
+        />
       ) : tab === "send" ? (
         <PushComposer
           action={sendPush}
@@ -194,7 +207,9 @@ export default async function NotificationsPage({
                           ? m.audience === "channels"
                             ? "Channel members"
                             : "All app users"
-                          : "1 person"}
+                          : m.kind === "welcome" || m.kind.startsWith("come_back")
+                            ? "1 phone"
+                            : "1 person"}
                     </Td>
                     <Td>
                       <Badge tone={m.kind === "manual" ? "blue" : m.kind === "new_videos" ? "gray" : "green"}>
