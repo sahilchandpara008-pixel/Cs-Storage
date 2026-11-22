@@ -1005,6 +1005,23 @@ select t.ok((select not (p->'user_data' ? 'madid') and (p->'app_data'->>'adverti
                        from public.meta_events e, public.meta_settings s
                       where e.event_id = 'mobile-install-99999999-0000-0000-0000-000000000001') x),
             'no advertising ID is sent to Meta when the user opted out');
+-- The Meta SDK already reported these installs: the server's
+-- MobileAppInstall is skipped (Meta would count it twice). Phones without
+-- the SDK (e1) still get it; our own AppInstall is untouched.
+insert into public.installs (install_id, referrer_status, source) values ('99999999-0000-0000-0000-0000000000e1', 'apk', 'meta');
+update public.meta_events set status = 'queued'
+ where event_name in ('MobileAppInstall', 'AppInstall') and status <> 'queued';
+select t.ok(public.meta_skip_sdk_installs() >= 1, 'server installs of SDK phones are skipped');
+select t.ok((select status = 'skipped' from public.meta_events
+              where event_id = 'mobile-install-99999999-0000-0000-0000-000000000001')
+            and (select status = 'queued' from public.meta_events
+                  where event_id = 'mobile-install-99999999-0000-0000-0000-0000000000e1')
+            and (select status = 'queued' from public.meta_events
+                  where event_id = 'install-99999999-0000-0000-0000-000000000001'),
+            'only MobileAppInstall of SDK phones is skipped; older phones and AppInstall are still sent');
+set role authenticated;
+select t.fails($$select public.meta_skip_sdk_installs()$$, 'app users cannot run the install skipper');
+reset role;
 set role anon;
 select t.fails($$select public.record_ad_ids('99999999-0000-0000-0000-000000000001', 'x', null)$$, 'not callable without a session');
 reset role;

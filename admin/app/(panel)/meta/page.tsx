@@ -24,7 +24,7 @@ type MetaEvent = {
   event_id: string;
   email: string | null;
   value: number | null;
-  status: "queued" | "sent" | "ok" | "failed";
+  status: "queued" | "sent" | "ok" | "failed" | "skipped";
   attempts: number;
   response: string | null;
   created_at: string;
@@ -59,6 +59,7 @@ function StatusBadge({ status }: { status: MetaEvent["status"] }) {
   if (status === "ok") return <Badge tone="green">Received by Meta</Badge>;
   if (status === "failed") return <Badge tone="red">Failed</Badge>;
   if (status === "sent") return <Badge tone="blue">Sent</Badge>;
+  if (status === "skipped") return <Badge>Not needed (app reported it)</Badge>;
   return <Badge tone="amber">Waiting</Badge>;
 }
 
