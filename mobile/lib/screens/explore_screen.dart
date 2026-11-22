@@ -5,9 +5,9 @@ import 'package:flutter/material.dart';
 import '../models.dart';
 import '../services/backend.dart';
 import '../widgets/common.dart';
+import '../widgets/poster_tile.dart';
 import '../widgets/reload.dart';
 import '../theme.dart';
-import 'post_screen.dart';
 
 /// Explore: every visible post from all channels, as a grid of media cards.
 class ExploreScreen extends StatefulWidget {
@@ -317,34 +317,26 @@ class _ExploreGridState extends State<_ExploreGrid>
         },
         child: LayoutBuilder(
           builder: (context, box) {
-            // First post as a featured hero, the rest as 16:9 cards.
-            final cols = (box.maxWidth / 230).floor().clamp(2, 5);
-            final cardW = (box.maxWidth - 16 * 2 - 12 * (cols - 1)) / cols;
-            final rest = posts!.skip(1).toList();
+            // Every post as a portrait poster, title below.
+            final cols = posterColumns(box.maxWidth);
+            final list = posts!;
             return CustomScrollView(
               slivers: [
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-                    child: _Hero(post: posts!.first),
-                  ),
+                const SliverToBoxAdapter(
+                  child: SectionTitle('Recommended for You'),
                 ),
-                if (rest.isNotEmpty)
-                  const SliverToBoxAdapter(
-                    child: SectionTitle('Recommended for You'),
-                  ),
                 SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                  padding: const EdgeInsets.fromLTRB(posterPad, 0, posterPad, 24),
                   sliver: SliverGrid(
                     gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: cols,
-                      mainAxisSpacing: 12,
-                      crossAxisSpacing: 12,
-                      mainAxisExtent: cardW * 9 / 16 + 52,
+                      mainAxisSpacing: 14,
+                      crossAxisSpacing: posterGap,
+                      mainAxisExtent: posterRowExtent(box.maxWidth),
                     ),
                     delegate: SliverChildBuilderDelegate(
-                      (context, i) => _Tile(post: rest[i]),
-                      childCount: rest.length,
+                      (context, i) => PosterTile(post: list[i]),
+                      childCount: list.length,
                     ),
                   ),
                 ),
@@ -433,278 +425,18 @@ class _SearchResultsState extends State<_SearchResults> {
       },
       child: LayoutBuilder(
         builder: (context, box) {
-          final cols = (box.maxWidth / 230).floor().clamp(2, 5);
-          final cardW = (box.maxWidth - 16 * 2 - 12 * (cols - 1)) / cols;
           return GridView.builder(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+            padding: const EdgeInsets.fromLTRB(posterPad, 12, posterPad, 24),
             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: cols,
-              mainAxisSpacing: 12,
-              crossAxisSpacing: 12,
-              mainAxisExtent: cardW * 9 / 16 + 52,
+              crossAxisCount: posterColumns(box.maxWidth),
+              mainAxisSpacing: 14,
+              crossAxisSpacing: posterGap,
+              mainAxisExtent: posterRowExtent(box.maxWidth),
             ),
             itemCount: posts!.length,
-            itemBuilder: (context, i) => _Tile(post: posts![i]),
+            itemBuilder: (context, i) => PosterTile(post: posts![i]),
           );
         },
-      ),
-    );
-  }
-}
-
-void _openPost(BuildContext context, Post post) => Navigator.of(context).push(
-  MaterialPageRoute(
-    builder: (_) => PostScreen(postId: post.id, initial: post),
-  ),
-);
-
-/// Big featured card (same tap as any other post).
-/// Big featured card (same tap as any other post).
-class _Hero extends StatelessWidget {
-  final Post post;
-  const _Hero({required this.post});
-
-  @override
-  Widget build(BuildContext context) {
-    final cover = post.cover;
-    final duration = cover?.durationS;
-    final isVideo = cover?.isVideo == true;
-    return Semantics(
-      label: post.title,
-      button: true,
-      child: PressScale(
-        child: GestureDetector(
-          onTap: () => _openPost(context, post),
-          child: AspectRatio(
-            aspectRatio: 16 / 10.5,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(22),
-                border: Border.all(color: AppColors.border),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(0x33FF6A00),
-                    blurRadius: 34,
-                    offset: Offset(0, 12),
-                  ),
-                ],
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(21),
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    NetThumb(
-                      url: cover?.thumbUrl,
-                      fallback: isVideo
-                          ? Icons.movie_outlined
-                          : Icons.image_outlined,
-                    ),
-                    const DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [Color(0x00000000), Color(0xF20A0A0C)],
-                          stops: [0.3, 1],
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      top: 14,
-                      left: 14,
-                      right: 14,
-                      child: Row(
-                        children: [
-                          if (post.hasPremium) const PremiumBadge(),
-                          const Spacer(),
-                          if (duration != null && duration > 0)
-                            ThumbPill(formatDuration(duration)),
-                        ],
-                      ),
-                    ),
-                    Positioned(
-                      left: 16,
-                      right: 16,
-                      bottom: 16,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            post.channelName,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: AppColors.muted,
-                              fontSize: 12.5,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            post.title,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontFamily: AppFonts.display,
-                              color: Colors.white,
-                              fontSize: 22,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: -0.3,
-                              height: 1.15,
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          // Looks like a button; does the same as tapping
-                          // the card.
-                          ExcludeSemantics(
-                            child: Container(
-                              height: 42,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 18,
-                              ),
-                              decoration: BoxDecoration(
-                                color: AppColors.primary,
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    isVideo
-                                        ? Icons.play_arrow_rounded
-                                        : Icons.open_in_full_rounded,
-                                    color: AppColors.ink,
-                                    size: isVideo ? 24 : 18,
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    isVideo ? 'Watch now' : 'Open',
-                                    style: const TextStyle(
-                                      color: AppColors.ink,
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 14,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _Tile extends StatelessWidget {
-  final Post post;
-  const _Tile({required this.post});
-
-  @override
-  Widget build(BuildContext context) {
-    final cover = post.cover;
-    final duration = cover?.durationS;
-    return Semantics(
-      label: post.title,
-      button: true,
-      child: PressScale(
-        child: InkWell(
-          borderRadius: BorderRadius.circular(Radii.card),
-          onTap: () => _openPost(context, post),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              AspectRatio(
-                aspectRatio: 16 / 9,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: AppColors.border),
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(13),
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        NetThumb(
-                          url: cover?.thumbUrl,
-                          fallback: cover?.isVideo == true
-                              ? Icons.movie_outlined
-                              : Icons.image_outlined,
-                        ),
-                        const DecoratedBox(
-                          decoration: BoxDecoration(gradient: AppColors.scrim),
-                        ),
-                        if (cover?.isVideo == true)
-                          const Center(child: PlayOverlay(size: 34)),
-                        if (post.hasPremium)
-                          const Positioned(
-                            top: 7,
-                            right: 7,
-                            child: PremiumBadge(compact: true),
-                          ),
-                        Positioned(
-                          bottom: 6,
-                          right: 6,
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (post.items.length > 1)
-                                ThumbPill(
-                                  '${post.items.length}',
-                                  icon: Icons.collections_outlined,
-                                ),
-                              if (post.items.length > 1 &&
-                                  duration != null &&
-                                  duration > 0)
-                                const SizedBox(width: 4),
-                              if (duration != null && duration > 0)
-                                ThumbPill(formatDuration(duration)),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(2, 8, 2, 0),
-                child: Text(
-                  post.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w500,
-                    height: 1.3,
-                  ),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(2, 2, 2, 0),
-                child: Text(
-                  post.channelName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppColors.muted,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }

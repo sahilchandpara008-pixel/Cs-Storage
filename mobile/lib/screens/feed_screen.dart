@@ -4,7 +4,7 @@ import '../models.dart';
 import '../services/backend.dart';
 import '../state/app_state.dart';
 import '../widgets/common.dart';
-import '../widgets/post_bubble.dart';
+import '../widgets/poster_tile.dart';
 import '../widgets/reload.dart';
 import '../theme.dart';
 
@@ -93,11 +93,20 @@ class _FeedScreenState extends State<FeedScreen> with ContentReload {
     }
     return RefreshIndicator(
       onRefresh: reload,
-      child: ListView.builder(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        itemCount: posts!.length,
-        itemBuilder: (context, i) =>
-            PostBubble(post: posts![i], showChannel: true),
+      child: LayoutBuilder(
+        builder: (context, box) => GridView.builder(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(posterPad, 12, posterPad, 24),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: posterColumns(box.maxWidth),
+            mainAxisSpacing: 14,
+            crossAxisSpacing: posterGap,
+            mainAxisExtent: posterRowExtent(box.maxWidth, showChannel: true),
+          ),
+          itemCount: posts!.length,
+          itemBuilder: (context, i) =>
+              PosterTile(post: posts![i], showChannel: true),
+        ),
       ),
     );
   }
