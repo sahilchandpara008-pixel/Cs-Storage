@@ -44,7 +44,13 @@ export default async function PanelLayout({ children }: { children: React.ReactN
             ],
           },
           { label: "Engage", items: [{ href: "/notifications", label: "Notifications", icon: "🔔" }] },
-          { label: "Settings", items: [{ href: "/admins", label: "Admins", icon: "⚙" }] },
+          {
+            label: "Settings",
+            items: [
+              { href: "/admins", label: "Admins", icon: "⚙" },
+              { href: "/cleanup", label: "Storage cleanup", icon: "🧹" },
+            ],
+          },
         ]
       : []),
   ];

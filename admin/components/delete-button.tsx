@@ -11,16 +11,22 @@ export function DeleteButton({
   label,
   pendingLabel,
   confirmText,
+  name,
+  value,
 }: {
   label: string;
   pendingLabel: string;
   confirmText: string;
+  name?: string;
+  value?: string;
 }) {
   const { pending } = useFormStatus();
   return (
     <Button
       variant="danger"
       type="submit"
+      name={name}
+      value={value}
       disabled={pending}
       onClick={(e) => {
         if (!pending && !window.confirm(confirmText)) e.preventDefault();
