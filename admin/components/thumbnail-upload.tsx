@@ -37,7 +37,7 @@ export function ThumbnailUpload({
       const key = `thumbs/${postId}/${crypto.randomUUID()}.${cover.ext}`;
       const up = await supabase.storage
         .from("public")
-        .upload(key, cover.blob, { contentType: cover.contentType, upsert: false });
+        .upload(key, cover.blob, { contentType: cover.contentType, upsert: false, cacheControl: "31536000" });
       if (up.error) throw up.error;
       const { error } = await supabase.from("post_items").update({ thumb_key: key }).eq("id", itemId);
       if (error) throw error;

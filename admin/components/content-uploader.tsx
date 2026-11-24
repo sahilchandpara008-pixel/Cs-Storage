@@ -368,7 +368,7 @@ export function ContentUploader({
           update(i, { message: "Uploading thumbnail…" });
           const thumb = await supabase.storage
             .from("public")
-            .upload(thumbKey, cover.blob, { contentType: cover.contentType, upsert: false });
+            .upload(thumbKey, cover.blob, { contentType: cover.contentType, upsert: false, cacheControl: "31536000" });
           if (thumb.error) {
             // Never lose the video over its cover: Bunny's frame is used instead.
             thumbKey = null;

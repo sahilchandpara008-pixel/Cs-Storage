@@ -16,7 +16,7 @@ export function IconUpload({ defaultValue }: { defaultValue?: string | null }) {
     const key = `channels/${crypto.randomUUID()}.${extension(file)}`;
     const { error } = await createClient()
       .storage.from("public")
-      .upload(key, file, { contentType: file.type, upsert: false });
+      .upload(key, file, { contentType: file.type, upsert: false, cacheControl: "31536000" });
     if (error) {
       setStatus(error.message);
       return;

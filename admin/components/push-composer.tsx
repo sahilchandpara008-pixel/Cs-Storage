@@ -92,7 +92,7 @@ export function PushComposer({
     const key = `push/${crypto.randomUUID()}.${extension(file)}`;
     const { error } = await createClient()
       .storage.from("public")
-      .upload(key, file, { contentType: file.type, upsert: false });
+      .upload(key, file, { contentType: file.type, upsert: false, cacheControl: "31536000" });
     if (error) return setImgStatus(error.message);
     setImage(publicUrl(key) ?? "");
     setImgStatus(null);

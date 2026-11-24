@@ -76,7 +76,7 @@ export function MediaUploader({
           update(i, { message: "Uploading thumbnail…" });
           const thumb = await supabase.storage
             .from("public")
-            .upload(thumbKey, info.thumbnail, { contentType: "image/jpeg", upsert: false });
+            .upload(thumbKey, info.thumbnail, { contentType: "image/jpeg", upsert: false, cacheControl: "31536000" });
           if (thumb.error) throw thumb.error;
         }
 

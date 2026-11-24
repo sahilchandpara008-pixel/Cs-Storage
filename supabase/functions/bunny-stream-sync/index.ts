@@ -90,6 +90,7 @@ Deno.serve(async (req) => {
     const { error } = await admin.storage.from("public").upload(key, bytes, {
       contentType: "image/jpeg",
       upsert: true,
+      cacheControl: "31536000",
     });
     if (error) return false;
     await admin.from("post_items").update({ thumb_key: key }).eq("id", item.id).is("thumb_key", null);
