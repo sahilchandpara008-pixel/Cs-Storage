@@ -24,7 +24,7 @@ trap cleanup EXIT
 initdb -D "$data" -U postgres --auth=trust >/dev/null
 pg_ctl -D "$data" -o "-p $port -k $data -c listen_addresses=''" -l "$data/log" -w start >/dev/null
 
-run() { psql -h "$data" -p "$port" -U postgres -d postgres -v ON_ERROR_STOP=1 -q -t -A "$@" 2>&1 | sed -n "s/^psql:.*NOTICE:  //p; /ERROR/p; /^All tests/p; /^Applying/p"; }
+run() { psql -h "$data" -p "$port" -U postgres -d postgres -v ON_ERROR_STOP=1 -q -t -A "$@" 2>&1 | sed -n "s/^psql:.*NOTICE:  //p; /ERROR/p; /^All tests/p; /^Partner feed tests/p; /^Applying/p"; }
 
 run -f "$here/supabase_stub.sql"
 for f in "$root"/migrations/*.sql; do
@@ -32,3 +32,4 @@ for f in "$root"/migrations/*.sql; do
   run -f "$f"
 done
 run -f "$here/rls_test.sql"
+run -f "$here/partner_feed_test.sql"

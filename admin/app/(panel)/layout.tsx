@@ -49,6 +49,7 @@ export default async function PanelLayout({ children }: { children: React.ReactN
             items: [
               { href: "/admins", label: "Admins", icon: "⚙" },
               { href: "/cleanup", label: "Storage cleanup", icon: "🧹" },
+              { href: "/partners", label: "Share with Puffle", icon: "⇄" },
             ],
           },
         ]

@@ -425,3 +425,6 @@ verify_jwt = false
 
 [functions.push-send]
 verify_jwt = false
+
+[functions.partner-feed]
+verify_jwt = false
